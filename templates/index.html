@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AroundMe - Find Places Near You</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AroundMe</h1>
+            <p>Discover places around your location</p>
+        </header>
+        
+        <div class="controls">
+            <div class="search-container">
+                <textarea id="searchQuery" placeholder="Describe what you're looking for... e.g., 'A quiet coffee shop with WiFi where I can study' or 'Family-friendly restaurant with outdoor seating'" rows="3"></textarea>
+                <div class="search-buttons">
+                    <button id="searchBtn" onclick="searchWithAI()">Find Best Matches</button>
+                    <button id="locationBtn" onclick="getCurrentLocation()">Update Location</button>
+                </div>
+            </div>
+            <div class="example-queries">
+                <span class="example-label">Try:</span>
+                <span class="example-chip" onclick="setQuery('A quiet coffee shop with good WiFi for studying')">Study-friendly cafe</span>
+                <span class="example-chip" onclick="setQuery('Romantic restaurant with great ambiance for a date night')">Date night spot</span>
+                <span class="example-chip" onclick="setQuery('Family restaurant with kids menu and play area')">Family dining</span>
+            </div>
+        </div>
+        
+        <div class="location-info">
+            <span id="locationStatus">Getting your location...</span>
+            <span id="coordinates"></span>
+        </div>
+        
+        <div class="main-content">
+            <div id="map"></div>
+            <div class="places-container">
+                <h2>Nearby Places</h2>
+                <div id="placesList"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="placeModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
