@@ -40,6 +40,17 @@
             <div class="places-container">
                 <h2>Nearby Places</h2>
                 <div id="placesList"></div>
+
+                <!-- ▼ NEW: Follow-up CTA (hidden until results exist) -->
+                <div id="followupBox" style="display:none; margin-top:12px;">
+                    <button id="followupBtn" style="padding:10px 14px;border-radius:8px;border:1px solid #333;background:#1b1b1b;color:#eaeaea;cursor:pointer;">
+                        💬 Have a follow-up question?
+                    </button>
+                    <div class="small" style="opacity:.7;margin-top:6px;">
+                        Ask why an item ranked high, request cheaper/closer options, or refine filters.
+                    </div>
+                </div>
+                <!-- ▲ NEW -->
             </div>
         </div>
     </div>
@@ -53,5 +64,88 @@
     
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+
+    <!-- ▼ NEW: Tiny helper to deep-link to /chat with context -->
+    <script>
+      (function(){
+        // Show CTA when we have any results in #placesList
+        const placesList = document.getElementById('placesList');
+        const followupBox = document.getElementById('followupBox');
+        const followupBtn = document.getElementById('followupBtn');
+
+        // If your script.js fills placesList dynamically, call window.AM_showFollowupCTA()
+        // after rendering results. We also observe DOM changes just in case.
+        const showIfHasResults = () => {
+          const has = placesList && placesList.children && placesList.children.length > 0;
+          if (has) followupBox.style.display = 'block';
+        };
+        showIfHasResults();
+
+        // Fallback: observe list changes
+        const obs = new MutationObserver(showIfHasResults);
+        if (placesList) obs.observe(placesList, { childList: true, subtree: true });
+
+        function encodeContext(obj){
+          try { return encodeURIComponent(btoa(JSON.stringify(obj))); }
+          catch(e){ return ''; }
+        }
+
+        function collectResultNames(limit=10){
+          // Works with most list markups: take first text of each child
+          const out = [];
+          const nodes = placesList ? Array.from(placesList.children) : [];
+          for (const el of nodes.slice(0, limit)) {
+            const t = (el.getAttribute('data-name') || el.textContent || '').trim();
+            if (t) out.push(t);
+          }
+          return out;
+        }
+
+        function getCoords(){
+          const el = document.getElementById('coordinates');
+          if (!el) return null;
+          // Expecting something like "Lat: 32.73, Lng: -97.11"
+          const m = el.textContent.match(/(-?\d+(\.\d+)?).+?(-?\d+(\.\d+)?)/);
+          return m ? { lat: parseFloat(m[1]), lng: parseFloat(m[3]) } : null;
+        }
+
+        // Optional: persist a conversation id locally to keep continuity between visits
+        function getConversationId(){ try { return localStorage.getItem('am_conversation_id'); } catch { return null; } }
+        function setConversationId(id){ try { localStorage.setItem('am_conversation_id', id); } catch {} }
+
+        // Expose a hook for script.js to update conversation id from SSE "start"
+        window.AM_setConversationId = setConversationId;
+
+        followupBtn?.addEventListener('click', function(){
+          const query = (document.getElementById('searchQuery')?.value || '').trim();
+          const coords = getCoords();
+          const names = collectResultNames(12);
+
+          const ctx = {
+            summary: query ? `Results for: ${query}` : 'Results context from AroundMe',
+            filters: {},                         // you can enrich this later
+            resultNames: names,                  // sends top names for grounding
+            coords,                              // if available
+            autostart: true
+          };
+
+          const q = new URLSearchParams();
+          const enc = encodeContext(ctx);
+          if (enc) q.set('context', enc);
+
+          const cid = getConversationId();
+          if (cid) q.set('conversationId', cid);
+
+          // Navigate to /chat (template already added in app.py)
+          window.location.href = '/chat?' + q.toString();
+        });
+
+        // Also expose a function your search code can call after it renders results
+        window.AM_showFollowupCTA = showIfHasResults;
+      })();
+    </script>
+    <!-- ▲ NEW -->
 </body>
 </html>
+
+<script src="{{ url_for('static', filename='chat_shim.js') }}"></script>

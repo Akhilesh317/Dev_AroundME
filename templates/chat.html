@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AroundMe • Chat</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #0b0b0b; color: #eaeaea; }
+    .wrap { max-width: 960px; margin: 24px auto; padding: 16px; }
+    h1 { font-size: 1.2rem; margin: 0 0 12px; }
+    .context { background:#111; border:1px solid #222; border-radius:10px; padding:12px; margin-bottom:12px; }
+    .row { display:flex; gap:8px; margin:12px 0; }
+    input[type="text"]{ flex:1; padding:10px 12px; border-radius:8px; border:1px solid #333; background:#111; color:inherit; }
+    button{ padding:10px 14px; border-radius:8px; border:1px solid #333; background:#1b1b1b; color:inherit; cursor:pointer; }
+    button:disabled{ opacity:.5; cursor:not-allowed; }
+    .messages{ display:flex; flex-direction:column; gap:6px; }
+    .bubble{ padding:10px 12px; border-radius:12px; margin:8px 0; max-width:80%; }
+    .user{ background:#1f2a44; align-self:flex-end; }
+    .assistant{ background:#1f402a; align-self:flex-start; }
+    .stream{ opacity:.85; }
+    .small{ opacity:.75; font-size:.85rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>AroundMe • Follow-up Chat</h1>
+
+    <div id="ctxBox" class="context small" style="display:none"></div>
+
+    <div class="row">
+      <input id="prompt" type="text" placeholder="Ask something about these results…" />
+      <button id="send">Send</button>
+    </div>
+
+    <div id="messages" class="messages"></div>
+  </div>
+
+  <script>
+    const $prompt = document.getElementById('prompt');
+    const $send = document.getElementById('send');
+    const $msgs = document.getElementById('messages');
+    const $ctxBox = document.getElementById('ctxBox');
+
+    // Read context from query: ?context=<base64 json>&conversationId=<id>
+    const params = new URLSearchParams(location.search);
+    const cidFromQS = params.get('conversationId') || '';
+    let context = null;
+    try {
+      const c = params.get('context');
+      if (c) context = JSON.parse(atob(decodeURIComponent(c)));
+    } catch(e){}
+
+    if (context) {
+      $ctxBox.style.display = 'block';
+      $ctxBox.textContent = 'Context: ' + (context.summary || JSON.stringify(context).slice(0,300) + '…');
+    }
+
+    function addBubble(text, who='assistant', streaming=false){
+      const div = document.createElement('div');
+      div.className = 'bubble ' + who + (streaming ? ' stream' : '');
+      div.textContent = text;
+      $msgs.appendChild(div);
+      $msgs.scrollTop = $msgs.scrollHeight;
+      return div;
+    }
+
+    async function sendMessage(text) {
+      if (!text) return;
+      $send.disabled = true;
+      addBubble(text, 'user');
+      const a = addBubble('…', 'assistant', true);
+
+      try{
+        // Attach optional conversationId and context in the first turn
+        const body = { message: text };
+        if (cidFromQS) body.conversationId = cidFromQS;
+        if (context) body.clientMeta = { context }; // server can store in content_json
+
+        const res = await fetch('/api/chat/stream', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(body)
+        });
+
+        if(!res.ok || !res.body){ a.textContent = 'Error: ' + res.status; a.classList.remove('stream'); return; }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let acc = '', finalText = '';
+
+        while(true){
+          const { value, done } = await reader.read();
+          if(done) break;
+          acc += decoder.decode(value, { stream:true });
+
+          const parts = acc.split('\n\n'); acc = parts.pop() || '';
+          for(const chunk of parts){
+            const lines = chunk.split('\n');
+            const ev = (lines.find(l=>l.startsWith('event:'))||'').slice(6).trim();
+            const d  = (lines.find(l=>l.startsWith('data:'))||'').slice(5).trim();
+            if(!ev || !d) continue;
+            try{
+              const data = JSON.parse(d);
+              if(ev === 'delta'){ finalText += data.delta || ''; a.textContent = finalText; }
+              if(ev === 'done'){ /* could capture assistantMsgId here */ }
+            }catch{}
+          }
+        }
+
+        a.classList.remove('stream');
+      }catch(e){
+        a.textContent = 'Network error: ' + e;
+        a.classList.remove('stream');
+      }finally{
+        $send.disabled = false;
+      }
+    }
+
+    // Hook input
+    $send.addEventListener('click', ()=> sendMessage($prompt.value.trim()));
+    $prompt.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMessage($prompt.value.trim()); $prompt.value=''; }
+    });
+
+    // Optional: auto-seed a first turn so the model knows the context
+    if (context && context.autostart !== false) {
+      const seed = "I have follow-up questions about these results.";
+      addBubble(seed, 'user');
+      sendMessage(seed);
+    }
+  </script>
+</body>
+</html>

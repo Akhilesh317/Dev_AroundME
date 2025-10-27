@@ -12,11 +12,16 @@ from chatgpt_places import ChatGPTPlacesSuggester
 import re
 from difflib import SequenceMatcher
 import math
+from chat_api import chat_bp
+
+
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+app.register_blueprint(chat_bp)  # <-- add this line
+
 
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
 YELP_API_KEY = os.getenv("YELP_API_KEY")
@@ -195,6 +200,24 @@ def _format_time_hhmm(time_str: str) -> str:
 # ==========================
 # Routes
 # ==========================
+
+@app.get("/chat-test")
+def chat_test_page():
+    return render_template("chat_test.html")  # serves templates/chat_test.html
+
+
+@app.get("/healthz")             # <-- optional quick health check
+def healthz():
+    return {"ok": True}
+
+
+@app.get("/chat")
+def chat_page():
+    # Pass-through route; template reads query params itself
+    return render_template("chat.html")
+
+
+
 @app.route("/")
 def index():
     return render_template("index.html")

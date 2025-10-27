@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AroundMe • Chat SSE Test</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #0b0b0b; color: #eaeaea; }
+    .wrap { max-width: 840px; margin: 24px auto; padding: 16px; }
+    h1 { font-size: 1.2rem; margin: 0 0 12px; }
+    .row { display: flex; gap: 8px; margin: 12px 0; }
+    input[type="text"] { flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid #333; background: #111; color: inherit; }
+    button { padding: 10px 14px; border-radius: 8px; border: 1px solid #333; background: #1b1b1b; color: inherit; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .log { background: #0f0f0f; border: 1px solid #222; border-radius: 10px; padding: 12px; min-height: 240px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .bubble { padding: 10px 12px; border-radius: 12px; margin: 8px 0; max-width: 80%; }
+    .user { background: #1f2a44; align-self: flex-end; }
+    .assistant { background: #1f402a; align-self: flex-start; }
+    .stream { opacity: 0.8; }
+    .messages { display: flex; flex-direction: column; gap: 6px; }
+    .small { opacity: .7; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>AroundMe • Chat SSE Test</h1>
+
+    <div class="row">
+      <input id="prompt" type="text" placeholder="Ask: Find a brunch place under $$ within 5 min drive." />
+      <button id="send">Send</button>
+    </div>
+    <div class="small">Tip: works even without OPENAI_API_KEY (it will echo).</div>
+
+    <div id="messages" class="messages" style="margin-top:12px;"></div>
+  </div>
+
+  <script>
+    const $prompt = document.getElementById('prompt');
+    const $send = document.getElementById('send');
+    const $msgs = document.getElementById('messages');
+
+    function addBubble(text, who = 'assistant', streaming = false) {
+      const div = document.createElement('div');
+      div.className = 'bubble ' + who + (streaming ? ' stream' : '');
+      div.textContent = text;
+      $msgs.appendChild(div);
+      $msgs.scrollTop = $msgs.scrollHeight;
+      return div;
+    }
+
+    async function sendMessage() {
+      const text = $prompt.value.trim();
+      if (!text) return;
+
+      $send.disabled = true;
+      addBubble(text, 'user');
+      const assistantDiv = addBubble('…', 'assistant', true);
+
+      try {
+        const res = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text })
+        });
+
+        if (!res.ok || !res.body) {
+          assistantDiv.textContent = 'Error: ' + res.status + ' ' + res.statusText;
+          assistantDiv.classList.remove('stream');
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let acc = '';
+        let finalText = '';
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          acc += decoder.decode(value, { stream: true });
+
+          // Parse SSE lines
+          const parts = acc.split('\n\n');
+          acc = parts.pop() || '';
+          for (const chunk of parts) {
+            const lines = chunk.split('\n');
+            const event = lines.find(l => l.startsWith('event:'))?.slice(6).trim();
+            const dataRaw = lines.find(l => l.startsWith('data:'))?.slice(5).trim();
+            if (!event || !dataRaw) continue;
+
+            try {
+              const data = JSON.parse(dataRaw);
+              if (event === 'delta') {
+                finalText += data.delta || '';
+                assistantDiv.textContent = finalText;
+              } else if (event === 'error') {
+                assistantDiv.textContent = 'Error: ' + (data.message || 'unknown');
+              }
+            } catch {
+              // ignore JSON parse errors for partial chunks
+            }
+          }
+        }
+
+        assistantDiv.classList.remove('stream');
+      } catch (e) {
+        assistantDiv.textContent = 'Network error: ' + e;
+        assistantDiv.classList.remove('stream');
+      } finally {
+        $send.disabled = false;
+        $prompt.value = '';
+        $prompt.focus();
+      }
+    }
+
+    $send.addEventListener('click', sendMessage);
+    $prompt.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+  </script>
+</body>
+</html>
