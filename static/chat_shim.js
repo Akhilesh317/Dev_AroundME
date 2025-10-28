@@ -136,3 +136,77 @@
   window.AM_normGoogle = normGoogle;
   window.AM_normYelp = normYelp;
 })();
+
+// static/chat_shim.js
+
+// Map provider-specific fields into a single, comparable shape.
+export function normalizePlaceForExplain(place, source /* 'google' | 'yelp' */) {
+  if (source === 'google') {
+    // Adjust these paths if your Google object differs
+    const name = place.displayName?.text || place.name || '';
+    const rating = Number(place.rating ?? 0);
+    const userRatingsTotal = Number(place.userRatingsTotal ?? 0);
+    const priceLevel = Number(place.priceLevel ?? 0);
+    const distance_m = Number(place.__distance_m ?? place.distance_m ?? 0); // your code may set this
+    const placeId = place.id || place.placeId || place.googleMapsUri || name;
+
+    return {
+      placeId,
+      name,
+      score: Number(place.__score ?? 0), // your ranking score if you computed one
+      contributions: {
+        rating: Number(place.__contrib?.rating ?? 0),
+        distance: Number(place.__contrib?.distance ?? 0),
+        price: Number(place.__contrib?.price ?? 0),
+        reviews: Number(place.__contrib?.reviews ?? 0),
+      },
+      raw: {
+        rating,
+        distance_m,
+        price_level: priceLevel,
+        reviews: userRatingsTotal,
+        source: 'google'
+      }
+    };
+  }
+
+  if (source === 'yelp') {
+    // Adjust these paths if your Yelp object differs
+    const name = place.name || '';
+    const rating = Number(place.rating ?? 0);
+    const review_count = Number(place.review_count ?? 0);
+    const priceStr = (place.price || '').trim(); // '$', '$$', ...
+    // convert '$' → 1, '$$' → 2, etc.
+    const price_level = priceStr ? priceStr.length : 0;
+    const distance_m = Number(place.distance ?? place.__distance_m ?? 0);
+    const placeId = place.id || name;
+
+    return {
+      placeId,
+      name,
+      score: Number(place.__score ?? 0),
+      contributions: {
+        rating: Number(place.__contrib?.rating ?? 0),
+        distance: Number(place.__contrib?.distance ?? 0),
+        price: Number(place.__contrib?.price ?? 0),
+        reviews: Number(place.__contrib?.reviews ?? 0),
+      },
+      raw: {
+        rating,
+        distance_m,
+        price_level,
+        reviews: review_count,
+        source: 'yelp'
+      }
+    };
+  }
+
+  // Fallback
+  return {
+    placeId: place.id || place.name || crypto.randomUUID(),
+    name: place.name || '',
+    score: Number(place.__score ?? 0),
+    contributions: { rating: 0, distance: 0, price: 0, reviews: 0 },
+    raw: { rating: 0, distance_m: 0, price_level: 0, reviews: 0, source }
+  };
+}
